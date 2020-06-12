@@ -113,7 +113,7 @@ func (cm *ChallengeMsg) UnMarshal(bs []byte) {
 		plen += int(cm.TargetInfoLen)
 	}
 
-	if (cm.NegotiateFlags&NEGOTIATE_VERSION)>>25 == 1 {
+	if cm.NegotiateFlags&NEGOTIATE_VERSION != 0 {
 		plen += 8
 	}
 

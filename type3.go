@@ -153,7 +153,7 @@ func (am *AuthenticateMsg) UnMarshal(bs []byte) {
 		plen += int(am.EncryptedRandomSessionKeyLen)
 	}
 
-	if (am.NegotiateFlags&NEGOTIATE_VERSION)>>25 == 1 {
+	if am.NegotiateFlags&NEGOTIATE_VERSION != 0 {
 		plen += 8
 
 		// Detect if there is MIC field
