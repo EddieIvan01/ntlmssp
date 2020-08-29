@@ -7,6 +7,8 @@ import (
 	"unsafe"
 )
 
+const ChallengeMsgPayloadOffset = 48
+
 type ChallengeMsg struct {
 	Signature   [8]byte
 	MessageType uint32
@@ -23,12 +25,11 @@ type ChallengeMsg struct {
 	TargetInfoMaxLen       uint16
 	TargetInfoBufferOffset uint32
 
-	// Version is variable
+	// Version is variable, saved in Payload field
 	// Version [8]byte
 	Payload []byte
 
 	offset uint32
-	ptr    uint32
 }
 
 func (cm ChallengeMsg) Display() {
@@ -102,8 +103,7 @@ func (cm *ChallengeMsg) UnMarshal(bs []byte) {
 	cm.TargetInfoLen = uint16(bytes2Uint(bs[40:42], '<'))
 	cm.TargetInfoMaxLen = uint16(bytes2Uint(bs[42:44], '<'))
 	cm.TargetInfoBufferOffset = uint32(bytes2Uint(bs[44:48], '<'))
-	cm.offset = 48
-	cm.ptr = 48
+	cm.offset = ChallengeMsgPayloadOffset
 
 	plen := 0
 	if cm.TargetNameBufferOffset != 0 && cm.TargetNameLen != 0 {
@@ -118,7 +118,7 @@ func (cm *ChallengeMsg) UnMarshal(bs []byte) {
 	}
 
 	cm.Payload = make([]byte, plen)
-	copy(cm.Payload, bs[cm.offset:cm.offset+uint32(plen)])
+	copy(cm.Payload, bs[ChallengeMsgPayloadOffset:ChallengeMsgPayloadOffset+uint32(plen)])
 }
 
 func NewChallengeMsg(bs []byte) *ChallengeMsg {
@@ -126,8 +126,7 @@ func NewChallengeMsg(bs []byte) *ChallengeMsg {
 	if bs == nil {
 		cm.Signature = [8]byte{'N', 'T', 'L', 'M', 'S', 'S', 'P', 0}
 		cm.MessageType = 0x02
-		cm.offset = 48
-		cm.ptr = 48
+		cm.offset = ChallengeMsgPayloadOffset
 	} else {
 		cm.UnMarshal(bs)
 	}
@@ -138,7 +137,7 @@ func (cm ChallengeMsg) TargetName() string {
 	if cm.TargetNameLen == 0 {
 		return ""
 	}
-	tname := cm.Payload[cm.TargetNameBufferOffset-cm.offset : cm.TargetNameBufferOffset-cm.offset+uint32(cm.TargetNameLen)]
+	tname := cm.Payload[cm.TargetNameBufferOffset-ChallengeMsgPayloadOffset : cm.TargetNameBufferOffset-ChallengeMsgPayloadOffset+uint32(cm.TargetNameLen)]
 
 	if cm.NegotiateFlags&1 == 1 {
 		return bytes2StringUTF16(tname)
@@ -154,23 +153,23 @@ func (cm *ChallengeMsg) SetTargetName(tname []byte) {
 	if cm.NegotiateFlags&NEGOTIATE_UNICODE_CHARSET != 0 {
 		cm.TargetNameLen = uint16(2 * len(tname))
 		cm.TargetNameMaxLen = cm.TargetNameLen
-		cm.TargetNameBufferOffset = cm.ptr
+		cm.TargetNameBufferOffset = cm.offset
 		cm.Payload = append(cm.Payload, encodeUTF16LE(tname)...)
 	} else {
 		cm.TargetNameLen = uint16(len(tname))
 		cm.TargetNameMaxLen = cm.TargetNameLen
-		cm.TargetNameBufferOffset = cm.ptr
+		cm.TargetNameBufferOffset = cm.offset
 		cm.Payload = append(cm.Payload, tname...)
 	}
 
-	cm.ptr += uint32(cm.TargetNameLen)
+	cm.offset += uint32(cm.TargetNameLen)
 }
 
 func (cm ChallengeMsg) TargetInfo() []byte {
 	if cm.TargetInfoLen == 0 {
 		return nil
 	}
-	return cm.Payload[cm.TargetInfoBufferOffset-cm.offset : cm.TargetInfoBufferOffset-cm.offset+uint32(cm.TargetInfoLen)]
+	return cm.Payload[cm.TargetInfoBufferOffset-ChallengeMsgPayloadOffset : cm.TargetInfoBufferOffset-ChallengeMsgPayloadOffset+uint32(cm.TargetInfoLen)]
 }
 
 func (cm *ChallengeMsg) SetTargetInfo(tinfo map[string]interface{}) {
@@ -201,9 +200,9 @@ func (cm *ChallengeMsg) SetTargetInfo(tinfo map[string]interface{}) {
 
 	cm.TargetInfoLen = uint16(len(bs))
 	cm.TargetInfoMaxLen = cm.TargetInfoLen
-	cm.TargetInfoBufferOffset = cm.ptr
+	cm.TargetInfoBufferOffset = cm.offset
 	cm.Payload = append(cm.Payload, bs...)
-	cm.ptr += uint32(cm.TargetInfoLen)
+	cm.offset += uint32(cm.TargetInfoLen)
 }
 
 func (cm ChallengeMsg) Version() []byte {
@@ -220,4 +219,9 @@ func (cm *ChallengeMsg) SetServerChallenge(challenge []byte) {
 	} else {
 		copy(cm.ServerChallenge[:], challenge)
 	}
+}
+
+func (cm *ChallengeMsg) Reset() {
+	cm.Payload = nil
+	cm.offset = ChallengeMsgPayloadOffset
 }

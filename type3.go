@@ -7,6 +7,8 @@ import (
 	"unsafe"
 )
 
+const AuthenticateMsgPayloadOffset = 64
+
 type AuthenticateMsg struct {
 	Signature   [8]byte
 	MessageType uint32
@@ -36,7 +38,7 @@ type AuthenticateMsg struct {
 	EncryptedRandomSessionKeyBufferOffset uint32
 
 	NegotiateFlags uint32
-	// Version is variable
+	// Version is variable, saved in Payload field
 	// Version        [8]byte
 
 	// The MIC field is omitted in Windows NT, Windows 2000, Windows XP, and Windows Server 2003.
@@ -44,7 +46,6 @@ type AuthenticateMsg struct {
 	Payload []byte
 
 	offset uint32
-	ptr    uint32
 }
 
 func (am AuthenticateMsg) Display() {
@@ -130,8 +131,7 @@ func (am *AuthenticateMsg) UnMarshal(bs []byte) {
 	am.EncryptedRandomSessionKeyBufferOffset = uint32(bytes2Uint(bs[56:60], '<'))
 
 	am.NegotiateFlags = uint32(bytes2Uint(bs[60:64], '<'))
-	am.offset = 64
-	am.ptr = 64
+	am.offset = AuthenticateMsgPayloadOffset
 
 	plen := 0
 	if am.LmChallengeResponseBufferOffset != 0 && am.LmChallengeResponseLen != 0 {
@@ -157,27 +157,27 @@ func (am *AuthenticateMsg) UnMarshal(bs []byte) {
 		plen += 8
 
 		// Detect if there is MIC field
-		if am.LmChallengeResponseBufferOffset > 72 &&
-			am.NtChallengeResponseBufferOffset > 72 &&
-			am.UserNameBufferOffset > 72 &&
-			am.EncryptedRandomSessionKeyBufferOffset > 72 &&
-			am.DomainNameBufferOffset > 72 &&
-			am.WorkstationBufferOffset > 72 {
+		if am.LmChallengeResponseBufferOffset > AuthenticateMsgPayloadOffset+8 &&
+			am.NtChallengeResponseBufferOffset > AuthenticateMsgPayloadOffset+8 &&
+			am.UserNameBufferOffset > AuthenticateMsgPayloadOffset+8 &&
+			am.EncryptedRandomSessionKeyBufferOffset > AuthenticateMsgPayloadOffset+8 &&
+			am.DomainNameBufferOffset > AuthenticateMsgPayloadOffset+8 &&
+			am.WorkstationBufferOffset > AuthenticateMsgPayloadOffset+8 {
 			plen += 16
 		}
 	} else {
-		if am.LmChallengeResponseBufferOffset > 64 &&
-			am.NtChallengeResponseBufferOffset > 64 &&
-			am.UserNameBufferOffset > 64 &&
-			am.EncryptedRandomSessionKeyBufferOffset > 64 &&
-			am.DomainNameBufferOffset > 64 &&
-			am.WorkstationBufferOffset > 64 {
+		if am.LmChallengeResponseBufferOffset > AuthenticateMsgPayloadOffset &&
+			am.NtChallengeResponseBufferOffset > AuthenticateMsgPayloadOffset &&
+			am.UserNameBufferOffset > AuthenticateMsgPayloadOffset &&
+			am.EncryptedRandomSessionKeyBufferOffset > AuthenticateMsgPayloadOffset &&
+			am.DomainNameBufferOffset > AuthenticateMsgPayloadOffset &&
+			am.WorkstationBufferOffset > AuthenticateMsgPayloadOffset {
 			plen += 16
 		}
 	}
 
 	am.Payload = make([]byte, plen)
-	copy(am.Payload, bs[am.offset:am.offset+uint32(plen)])
+	copy(am.Payload, bs[AuthenticateMsgPayloadOffset:AuthenticateMsgPayloadOffset+uint32(plen)])
 }
 
 func (am AuthenticateMsg) Marshal(endian byte) []byte {
@@ -250,8 +250,7 @@ func NewAuthenticateMsg(bs []byte) *AuthenticateMsg {
 	if bs == nil {
 		am.Signature = [8]byte{'N', 'T', 'L', 'M', 'S', 'S', 'P', 0}
 		am.MessageType = 0x03
-		am.offset = 64
-		am.ptr = 64
+		am.offset = AuthenticateMsgPayloadOffset
 	} else {
 		am.UnMarshal(bs)
 	}
@@ -263,7 +262,7 @@ func (am AuthenticateMsg) LmChallengeResponse() []byte {
 		return nil
 	}
 
-	bs := am.Payload[am.LmChallengeResponseBufferOffset-am.offset : am.LmChallengeResponseBufferOffset-am.offset+uint32(am.LmChallengeResponseLen)]
+	bs := am.Payload[am.LmChallengeResponseBufferOffset-AuthenticateMsgPayloadOffset : am.LmChallengeResponseBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.LmChallengeResponseLen)]
 	return bs
 }
 
@@ -272,7 +271,7 @@ func (am AuthenticateMsg) NtChallengeResponse() interface{} {
 		return nil
 	}
 
-	bs := am.Payload[am.NtChallengeResponseBufferOffset-am.offset : am.NtChallengeResponseBufferOffset-am.offset+uint32(am.NtChallengeResponseLen)]
+	bs := am.Payload[am.NtChallengeResponseBufferOffset-AuthenticateMsgPayloadOffset : am.NtChallengeResponseBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.NtChallengeResponseLen)]
 
 	var resp interface{}
 	if len(bs) > 24 {
@@ -293,7 +292,7 @@ func (am AuthenticateMsg) NtChallengeResponseBytes() []byte {
 		return nil
 	}
 
-	return am.Payload[am.NtChallengeResponseBufferOffset-am.offset : am.NtChallengeResponseBufferOffset-am.offset+uint32(am.NtChallengeResponseLen)]
+	return am.Payload[am.NtChallengeResponseBufferOffset-AuthenticateMsgPayloadOffset : am.NtChallengeResponseBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.NtChallengeResponseLen)]
 
 }
 
@@ -302,7 +301,7 @@ func (am AuthenticateMsg) DomainName() string {
 		return ""
 	}
 
-	domain := am.Payload[am.DomainNameBufferOffset-am.offset : am.DomainNameBufferOffset-am.offset+uint32(am.DomainNameLen)]
+	domain := am.Payload[am.DomainNameBufferOffset-AuthenticateMsgPayloadOffset : am.DomainNameBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.DomainNameLen)]
 	if am.NegotiateFlags&1 == 1 {
 		return bytes2StringUTF16(domain)
 	}
@@ -314,14 +313,14 @@ func (am AuthenticateMsg) DomainNameBytes() []byte {
 		return nil
 	}
 
-	return am.Payload[am.DomainNameBufferOffset-am.offset : am.DomainNameBufferOffset-am.offset+uint32(am.DomainNameLen)]
+	return am.Payload[am.DomainNameBufferOffset-AuthenticateMsgPayloadOffset : am.DomainNameBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.DomainNameLen)]
 }
 
 func (am AuthenticateMsg) UserName() string {
 	if am.UserNameLen == 0 {
 		return ""
 	}
-	uname := am.Payload[am.UserNameBufferOffset-am.offset : am.UserNameBufferOffset-am.offset+uint32(am.UserNameLen)]
+	uname := am.Payload[am.UserNameBufferOffset-AuthenticateMsgPayloadOffset : am.UserNameBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.UserNameLen)]
 
 	if am.NegotiateFlags&1 == 1 {
 		return bytes2StringUTF16(uname)
@@ -333,14 +332,14 @@ func (am AuthenticateMsg) UserNameBytes() []byte {
 	if am.UserNameLen == 0 {
 		return nil
 	}
-	return am.Payload[am.UserNameBufferOffset-am.offset : am.UserNameBufferOffset-am.offset+uint32(am.UserNameLen)]
+	return am.Payload[am.UserNameBufferOffset-AuthenticateMsgPayloadOffset : am.UserNameBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.UserNameLen)]
 }
 
 func (am AuthenticateMsg) Workstation() string {
 	if am.WorkstationLen == 0 {
 		return ""
 	}
-	ws := am.Payload[am.WorkstationBufferOffset-am.offset : am.WorkstationBufferOffset-am.offset+uint32(am.WorkstationMaxLen)]
+	ws := am.Payload[am.WorkstationBufferOffset-AuthenticateMsgPayloadOffset : am.WorkstationBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.WorkstationMaxLen)]
 
 	if am.NegotiateFlags&1 == 1 {
 		return bytes2StringUTF16(ws)
@@ -352,7 +351,7 @@ func (am AuthenticateMsg) WorkstationBytes() []byte {
 	if am.WorkstationLen == 0 {
 		return nil
 	}
-	return am.Payload[am.WorkstationBufferOffset-am.offset : am.WorkstationBufferOffset-am.offset+uint32(am.WorkstationMaxLen)]
+	return am.Payload[am.WorkstationBufferOffset-AuthenticateMsgPayloadOffset : am.WorkstationBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.WorkstationMaxLen)]
 
 }
 
@@ -360,7 +359,7 @@ func (am AuthenticateMsg) EncryptedRandomSessionKey() []byte {
 	if am.EncryptedRandomSessionKeyLen == 0 {
 		return nil
 	}
-	return am.Payload[am.EncryptedRandomSessionKeyBufferOffset-am.offset : am.EncryptedRandomSessionKeyBufferOffset-am.offset+uint32(am.EncryptedRandomSessionKeyLen)]
+	return am.Payload[am.EncryptedRandomSessionKeyBufferOffset-AuthenticateMsgPayloadOffset : am.EncryptedRandomSessionKeyBufferOffset-AuthenticateMsgPayloadOffset+uint32(am.EncryptedRandomSessionKeyLen)]
 }
 
 func (am AuthenticateMsg) Version() []byte {
@@ -379,16 +378,16 @@ func (am *AuthenticateMsg) SetUserName(uname []byte) {
 	if am.NegotiateFlags&NEGOTIATE_UNICODE_CHARSET != 0 {
 		am.UserNameLen = uint16(2 * len(uname))
 		am.UserNameMaxLen = am.UserNameLen
-		am.UserNameBufferOffset = am.ptr
+		am.UserNameBufferOffset = am.offset
 		am.Payload = append(am.Payload, encodeUTF16LE(uname)...)
 	} else {
 		am.UserNameLen = uint16(len(uname))
 		am.UserNameMaxLen = am.UserNameLen
-		am.UserNameBufferOffset = am.ptr
+		am.UserNameBufferOffset = am.offset
 		am.Payload = append(am.Payload, uname...)
 	}
 
-	am.ptr += uint32(am.UserNameLen)
+	am.offset += uint32(am.UserNameLen)
 }
 
 func (am *AuthenticateMsg) SetDomainName(dname []byte) {
@@ -399,16 +398,16 @@ func (am *AuthenticateMsg) SetDomainName(dname []byte) {
 	if am.NegotiateFlags&NEGOTIATE_UNICODE_CHARSET != 0 {
 		am.DomainNameLen = uint16(2 * len(dname))
 		am.DomainNameMaxLen = am.DomainNameLen
-		am.DomainNameBufferOffset = am.ptr
+		am.DomainNameBufferOffset = am.offset
 		am.Payload = append(am.Payload, encodeUTF16LE(dname)...)
 	} else {
 		am.DomainNameLen = uint16(len(dname))
 		am.DomainNameMaxLen = am.DomainNameLen
-		am.DomainNameBufferOffset = am.ptr
+		am.DomainNameBufferOffset = am.offset
 		am.Payload = append(am.Payload, dname...)
 	}
 
-	am.ptr += uint32(am.DomainNameLen)
+	am.offset += uint32(am.DomainNameLen)
 }
 
 func (am *AuthenticateMsg) SetWorkstation(ws []byte) {
@@ -419,16 +418,16 @@ func (am *AuthenticateMsg) SetWorkstation(ws []byte) {
 	if am.NegotiateFlags&NEGOTIATE_UNICODE_CHARSET != 0 {
 		am.WorkstationLen = uint16(2 * len(ws))
 		am.WorkstationMaxLen = am.WorkstationLen
-		am.WorkstationBufferOffset = am.ptr
+		am.WorkstationBufferOffset = am.offset
 		am.Payload = append(am.Payload, encodeUTF16LE(ws)...)
 	} else {
 		am.WorkstationLen = uint16(len(ws))
 		am.WorkstationMaxLen = am.WorkstationLen
-		am.WorkstationBufferOffset = am.ptr
+		am.WorkstationBufferOffset = am.offset
 		am.Payload = append(am.Payload, ws...)
 	}
 
-	am.ptr += uint32(am.WorkstationLen)
+	am.offset += uint32(am.WorkstationLen)
 }
 
 func (am *AuthenticateMsg) SetLmResponse(version int, challenge []byte, pwd []byte) {
@@ -456,9 +455,9 @@ func (am *AuthenticateMsg) SetLmResponse(version int, challenge []byte, pwd []by
 
 	am.LmChallengeResponseLen = uint16(len(lmresp))
 	am.LmChallengeResponseMaxLen = am.LmChallengeResponseLen
-	am.LmChallengeResponseBufferOffset = am.ptr
+	am.LmChallengeResponseBufferOffset = am.offset
 	am.Payload = append(am.Payload, lmresp...)
-	am.ptr += uint32(am.LmChallengeResponseLen)
+	am.offset += uint32(am.LmChallengeResponseLen)
 }
 
 func (am *AuthenticateMsg) SetNtResponse(version int, challenge []byte, pwd []byte) {
@@ -486,9 +485,9 @@ func (am *AuthenticateMsg) SetNtResponse(version int, challenge []byte, pwd []by
 
 	am.NtChallengeResponseLen = uint16(len(ntresp))
 	am.NtChallengeResponseMaxLen = am.NtChallengeResponseLen
-	am.NtChallengeResponseBufferOffset = am.ptr
+	am.NtChallengeResponseBufferOffset = am.offset
 	am.Payload = append(am.Payload, ntresp...)
-	am.ptr += uint32(am.NtChallengeResponseLen)
+	am.offset += uint32(am.NtChallengeResponseLen)
 }
 
 func (am *AuthenticateMsg) SetNTLMResponse(version int, challenge []byte, pwd []byte) {
@@ -497,19 +496,24 @@ func (am *AuthenticateMsg) SetNTLMResponse(version int, challenge []byte, pwd []
 		rand.Read(nonce[:8])
 		am.LmChallengeResponseLen = 24
 		am.LmChallengeResponseMaxLen = 24
-		am.LmChallengeResponseBufferOffset = am.ptr
+		am.LmChallengeResponseBufferOffset = am.offset
 		am.Payload = append(am.Payload, nonce[:]...)
-		am.ptr += uint32(am.LmChallengeResponseLen)
+		am.offset += uint32(am.LmChallengeResponseLen)
 
 		ntsresp := ComputeNTLMv2SessionResponse(challenge, nonce[:8], NtHash([]byte(pwd)))
 		am.NtChallengeResponseLen = uint16(len(ntsresp))
 		am.NtChallengeResponseMaxLen = am.NtChallengeResponseLen
-		am.NtChallengeResponseBufferOffset = am.ptr
+		am.NtChallengeResponseBufferOffset = am.offset
 		am.Payload = append(am.Payload, ntsresp...)
-		am.ptr += uint32(am.NtChallengeResponseLen)
+		am.offset += uint32(am.NtChallengeResponseLen)
 
 	} else {
 		am.SetLmResponse(version, challenge, pwd)
 		am.SetNtResponse(version, challenge, pwd)
 	}
+}
+
+func (am *AuthenticateMsg) Reset() {
+	am.Payload = nil
+	am.offset = AuthenticateMsgPayloadOffset
 }

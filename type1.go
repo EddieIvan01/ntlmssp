@@ -6,6 +6,8 @@ import (
 	"unsafe"
 )
 
+const NegotiateMsgPayloadOffset = 32
+
 // https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/
 type NegotiateMsg struct {
 	Signature      [8]byte
@@ -20,14 +22,11 @@ type NegotiateMsg struct {
 	WorkstationMaxLen       uint16
 	WorkstationBufferOffset uint32
 
-	// Version is variable
+	// Version is variable, saved in Payload field
 	// Version [8]byte
 	Payload []byte
 
-	// payload offset
 	offset uint32
-
-	ptr uint32
 }
 
 func (nm NegotiateMsg) Display() {
@@ -90,8 +89,7 @@ func (nm *NegotiateMsg) UnMarshal(bs []byte) {
 	nm.WorkstationMaxLen = uint16(bytes2Uint(bs[26:28], '<'))
 	nm.WorkstationBufferOffset = uint32(bytes2Uint(bs[28:32], '<'))
 
-	nm.offset = 32
-	nm.ptr = 32
+	nm.offset = NegotiateMsgPayloadOffset
 
 	plen := 0
 	if nm.DomainNameBufferOffset != 0 && nm.DomainNameLen != 0 {
@@ -106,7 +104,7 @@ func (nm *NegotiateMsg) UnMarshal(bs []byte) {
 	}
 
 	nm.Payload = make([]byte, plen)
-	copy(nm.Payload, bs[nm.offset:nm.offset+uint32(plen)])
+	copy(nm.Payload, bs[NegotiateMsgPayloadOffset:NegotiateMsgPayloadOffset+uint32(plen)])
 }
 
 func NewNegotiateMsg(bs []byte) *NegotiateMsg {
@@ -114,8 +112,7 @@ func NewNegotiateMsg(bs []byte) *NegotiateMsg {
 	if bs == nil {
 		nm.Signature = [8]byte{'N', 'T', 'L', 'M', 'S', 'S', 'P', 0}
 		nm.MessageType = 0x01
-		nm.offset = 32
-		nm.ptr = 32
+		nm.offset = NegotiateMsgPayloadOffset
 	} else {
 		nm.UnMarshal(bs)
 	}
@@ -127,7 +124,7 @@ func (nm NegotiateMsg) DomainName() string {
 	if nm.DomainNameLen == 0 {
 		return ""
 	}
-	return string(nm.Payload[nm.DomainNameBufferOffset-nm.offset : nm.DomainNameBufferOffset-nm.offset+uint32(nm.DomainNameLen)])
+	return string(nm.Payload[nm.DomainNameBufferOffset-NegotiateMsgPayloadOffset : nm.DomainNameBufferOffset-NegotiateMsgPayloadOffset+uint32(nm.DomainNameLen)])
 }
 
 // Must be OEM charset
@@ -135,7 +132,7 @@ func (nm NegotiateMsg) Workstation() string {
 	if nm.WorkstationLen == 0 {
 		return ""
 	}
-	return string(nm.Payload[nm.WorkstationBufferOffset-nm.offset : nm.WorkstationBufferOffset-nm.offset+uint32(nm.WorkstationLen)])
+	return string(nm.Payload[nm.WorkstationBufferOffset-NegotiateMsgPayloadOffset : nm.WorkstationBufferOffset-NegotiateMsgPayloadOffset+uint32(nm.WorkstationLen)])
 }
 
 func (nm *NegotiateMsg) SetDomainName(dname []byte) {
@@ -147,9 +144,9 @@ func (nm *NegotiateMsg) SetDomainName(dname []byte) {
 
 	nm.DomainNameLen = uint16(len(dname))
 	nm.DomainNameMaxLen = nm.DomainNameLen
-	nm.DomainNameBufferOffset = nm.ptr
+	nm.DomainNameBufferOffset = nm.offset
 	nm.Payload = append(nm.Payload, dname...)
-	nm.ptr += uint32(nm.DomainNameLen)
+	nm.offset += uint32(nm.DomainNameLen)
 }
 
 func (nm *NegotiateMsg) SetWorkstation(ws []byte) {
@@ -161,9 +158,9 @@ func (nm *NegotiateMsg) SetWorkstation(ws []byte) {
 
 	nm.WorkstationLen = uint16(len(ws))
 	nm.WorkstationMaxLen = nm.WorkstationLen
-	nm.WorkstationBufferOffset = nm.ptr
+	nm.WorkstationBufferOffset = nm.offset
 	nm.Payload = append(nm.Payload, ws...)
-	nm.ptr += uint32(nm.WorkstationLen)
+	nm.offset += uint32(nm.WorkstationLen)
 }
 
 func (nm NegotiateMsg) Version() []byte {
@@ -172,4 +169,9 @@ func (nm NegotiateMsg) Version() []byte {
 	} else {
 		return nil
 	}
+}
+
+func (nm *NegotiateMsg) Reset() {
+	nm.Payload = nil
+	nm.offset = NegotiateMsgPayloadOffset
 }
